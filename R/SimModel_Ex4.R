@@ -9,6 +9,10 @@ library(dplyr)
 #set seed for reproducability
 set.seed(100)
 
+#parameters for simulation
+REP <- 1000L #repetitions
+N <- 200L #sample size
+
 #=-=-CASE SELECTION=-=-=-#
 #e.covs are now arranged in a vector of size 10
 #input of ii_choice in order: redundancy/zero interaction/synergy
@@ -299,10 +303,6 @@ for (i in 1:nrow(df_edgelist)) {
 
 
 #=-=-SIMULATION PROCESS-=-=-=-=-=-=#
-#calculating II per triplet
-REP <- 1000L #repetitions
-N <- 200L #sample size
-
 #prepare master dataframe
 df_master <- data.frame(node_from=as.integer(),
                         node_to=as.integer(),
@@ -512,6 +512,22 @@ kpi_matrix_agg[1,2] <- length(which(df_master$programmed == 0
 sensitivity_agg <- kpi_matrix_agg[1,1] / (kpi_matrix_agg[1,1] + kpi_matrix_agg[2,1])
 specificity_agg <- kpi_matrix_agg[2,2] / (kpi_matrix_agg[2,2] + kpi_matrix_agg[1,2])
 
+# (C) Average weight of edges
+df_master_filtered_weight <- df_master[!is.na(df_master$weight),c(1,2,4)]
+#aggregate edges by average weight
+df_master_filtered_weight_agg <- aggregate(df_master_filtered_weight[,3], by=list(df_master_filtered_weight$node_from, 
+                                                                                  df_master_filtered_weight$node_to), FUN=mean)
+df_master_filtered_weight_agg[,3] <- format(df_master_filtered_weight_agg[,3], digits=3, nsmall=0)
+colnames(df_master_filtered_weight_agg) <- c("node_from", "node_to", "avg_weight")
+
+#add metadata about % of occurrences in list
+df_master_filtered_weight_agg <- merge(x=df_master_filtered_weight_agg,y=df_master_filtered_agg[,c(1,2,5)], all.x=TRUE)
+#descending sort by occurrence %
+df_master_filtered_weight_agg <- df_master_filtered_weight_agg[order(-df_master_filtered_weight_agg$occur),]
+
+# (C-2) Filter by only significant edges (< -0.02 or > 0.02)
+df_weight_sig <- df_master_filtered_weight_agg[abs(as.numeric(df_master_filtered_weight_agg$avg_weight)) >= 0.02,]
+
 
 #=-=-CALCULATING II PER TRIPLET-=-=-=-=-=-=#
 #preparing dataframe for the output, two columns for scores and description of level of II intended
@@ -543,7 +559,9 @@ list_results <- list('Iteration Summary (Avg. KPIs)' = df_kpi_avg, 'Iteration KP
                      'II per Triplet' = df_ii,
                      'Occurrences of All Edges' = df_master_filtered_agg_occurlist,
                      'Occurrences of All Programmed Edges' = df_master_filtered_agg_programmed,
-                     'Occurrences of All Non-Programmed Edges' = df_master_filtered_agg_nonprogrammed)
+                     'Occurrences of All Non-Programmed Edges' = df_master_filtered_agg_nonprogrammed,
+                     'Avg. Edge Weights & Occurrences' = df_master_filtered_weight_agg,
+                     'Only Significant Avg. Edge Weights & Occurrences' = df_weight_sig)
 
 print(list_results$`Iteration Summary (Avg. KPIs)`)
 print(list_results$`II per Triplet`)
