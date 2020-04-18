@@ -6,6 +6,9 @@ library(semPlot)
 library(qgraph)
 library(dplyr)
 
+#set seed for reproducability
+set.seed(100)
+
 #=-=-CASE SELECTION=-=-=-#
 #e.covs are now arranged in a vector of size 10
 #input of ii_choice in order: redundancy/zero interaction/synergy
@@ -273,17 +276,105 @@ Sigma <- lavInspect(fit, "Sigma")
 #visualize lavaan SEM
 semPaths(fit)
 
-#understand covariances via summary()
-#summary(fit)
+
+#=-=-BASELINE EDGELIST-=-=-=-=-=-=#
+#STEP 1: create dataframe to store all possible edges in
+df_edgelist <- data.frame(node_from=as.integer(),
+                          node_to=as.integer(),
+                          programmed=as.integer(),
+                          in_cluster=as.integer())[1:1000,]
+
+#create two vectors to prepare all possible node combinations for edges
+all_from <- seq(1,36) #36 because 12 triplets
+all_to <- all_from[-1]
+
+#row number sequence for indexing on rows in empty dataframe
+rownum <- seq(1, 1000)
+
+#produce all possible combinations of nodes for the complete edgelist
+for (i in seq(1, length(all_from))) {
+  if (length(all_to) == 0) {
+    break
+  }
+  
+  else {
+    for (j in seq(1, length(all_to))) {
+      df_edgelist$node_from[rownum[1]] <- all_from[i]
+      df_edgelist$node_to[rownum[1]] <- all_to[j]
+      df_edgelist$programmed[rownum[1]] <- 0
+      df_edgelist$in_cluster[rownum[1]] <- 0
+      rownum <- rownum[-1]
+    }
+    all_to <- all_to[-1]
+  }
+}
+
+#remove rows with NA listed
+df_edgelist <- df_edgelist[complete.cases(df_edgelist),]
+
+#STEP 2: for each node combination, correctly flag whether the edge is expected or programmed in the model
+for (i in 1:nrow(df_edgelist)) {
+  #for each possible edge
+  for (j in seq(1, max(df_edgelist$node_to), 12)) {
+    #use if-statement to check whether combination of edges is expected/programmed
+    if (
+      (df_edgelist$node_from[i] >= j & df_edgelist$node_from[i] <= j+2 
+       & df_edgelist$node_to[i] >= j & df_edgelist$node_to[i] <= j+2) #edges within triplet A/E/I
+      
+      | (df_edgelist$node_from[i] >= j+3 & df_edgelist$node_from[i] <= j+5 
+         & df_edgelist$node_to[i] >= j+3 & df_edgelist$node_to[i] <= j+5) #edges within triplet B/F/J
+      
+      | (df_edgelist$node_from[i] >= j+6 & df_edgelist$node_from[i] <= j+8 
+         & df_edgelist$node_to[i] >= j+6 & df_edgelist$node_to[i] <= j+8) #edges within triplet C/G/K
+      
+      | (df_edgelist$node_from[i] >= j+9 & df_edgelist$node_from[i] <= j+11 
+         & df_edgelist$node_to[i] >= j+9 & df_edgelist$node_to[i] <= j+11) #edges within triplet D/H/L
+      
+      | (df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+5) #to include edges of A.z to B.z, etc.
+      | (df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+8) #to include edges of A.z to C.z, etc.
+      | (df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+11) #to include edges of A.z to D.z, etc
+      | (df_edgelist$node_from[i] == j+5 & df_edgelist$node_to[i] == j+8) #to indluce edges of B.z to C.z, etc.
+      | (df_edgelist$node_from[i] == j+5 & df_edgelist$node_to[i] == j+11) #to include edges of B.z to D.z, etc.
+      | (df_edgelist$node_from[i] == j+8 & df_edgelist$node_to[i] == j+11)) #to include edges of C.z to D.z, etc.
+      
+    
+    {
+      #if condition is met, change value of 'programmed' column to 1
+      df_edgelist$programmed[i] <- 1
+    }
+  }
+}
+
+#STEP 3: label whether node combination for edge can be expected (not but programmed) within cluster
+#e.g. in a cluster with three triplets, spurious correlation between node 1 and 12 is expected, between 1 and 13 not.
+for (i in 1:nrow(df_edgelist)) {
+  for (j in seq(1, max(df_edgelist$node_to), 12)) {
+    if (df_edgelist$node_from[i] >= j & df_edgelist$node_to[i] <= j+11) {
+      df_edgelist$in_cluster[i] <- 1
+    }
+  }
+}
 
 
-#=-=-SIMULATING INTERACTION INFORMATION-=-=-=-=-=-=#
+#=-=-SIMULATION PROCESS-=-=-=-=-=-=#
 #calculating II per triplet
-REP <- 100L #repetitions
-N <- 2000L #sample size
+REP <- 1000L #repetitions
+N <- 200L #sample size
+
+#prepare master dataframe
+df_master <- data.frame(node_from=as.integer(),
+                        node_to=as.integer(),
+                        programmed=as.integer(),
+                        in_cluster=as.integer(),
+                        weight=as.numeric(),
+                        run_id=as.integer())
 
 #prepare list of vectors
 ii_list <- list()
+
+#prepare vectors for KPIs
+sensitivity_vector <- specificity_vector <- incluster_vector <- outcluster_vector <-
+  programmed_vector <- nonprogrammed_vector <- size_vector <- c(numeric(REP))
 
 for(i in 1:length(ecov)){
   #create dynamic string for variable name for vector
@@ -293,10 +384,12 @@ for(i in 1:length(ecov)){
 }
 
 for(j in seq_len(REP)) {
-  #simulate 'REP' times a dataset of size N and find the correlation matrix
+  #STEP 1: simulate 'REP' times a dataset of size N and find the correlation matrix
   Data <- simulateData(pop.model, sample.nobs = N)
   COR <- cor(Data)
   
+  
+  #STEP 2: calculate interaction information per triplet
   #length of ecov also translates in the number of triplets in the model
   for(i in 1:length(ecov)){
     #for each triplet
@@ -308,76 +401,82 @@ for(j in seq_len(REP)) {
     #and assign for each iteration of REP the value into the 'dynamic value'
     ii_list[[i]][j] <- lav_interaction_information_cor_triplet(COR[m_low:m_high, m_low:m_high])
   }
-}
-
-#preparing dataframe for the output, two columns for scores and description of level of II intended
-df <- data.frame(ii_score=as.numeric(12),
-                 ii_programmed=character(12),
-                 stringsAsFactors = FALSE)
-
-for(i in 1:length(ecov)){
-  #add mean II values per triplet
-  df$ii_score[i] <- mean(ii_list[[i]])
   
-  #add description of programmed intention of level of II
-  if (ecov[i] == ii_choice[1]) {
-    df$ii_programmed[i] <- "redundancy"
-  }
-  else if (ecov[i] == ii_choice[2]) {
-    df$ii_programmed[i] <- "zero interaction"
-  }
-  else if (ecov[i] == ii_choice[3]) {
-    df$ii_programmed[i] <- "synergy"
-  }
-  else {
-    df$ii_programmed[i] <- "custom"
-  }
+  
+  #STEP 3: retrieve edgelist from glasso
+  qgraph_glasso <- qgraph(cor(Data), layout="spring", graph="glasso", sampleSize=1000, 
+                          threshold=TRUE, DoNotPlot=TRUE)$Edgelist
+  
+  glasso_edges <- data.frame(qgraph_glasso$from, qgraph_glasso$to, qgraph_glasso$weight)
+  #rename column names to match with df_edgelist
+  colnames(glasso_edges) <- c("node_from", "node_to", "weight")
+  
+  
+  #STEP 4: merge the glasso edges with the baseline edgelist, left outer join
+  df_edgelist_merged <-merge(x=df_edgelist,y=glasso_edges, all.x=TRUE)
+  #add run_id to know from which iteration the data comes from
+  df_edgelist_merged$run_id <- j
+  
+  
+  #STEP 5: save results of iteration in master dataframe
+  df_master <- rbind(df_master, df_edgelist_merged)
+  
+  
+  #STEP 6: calculate KPIs per iteration
+  #prepare a 2x2 matrix for sensitivity/specificity
+  kpi_matrix <- matrix(c(0,0,0,0),nrow=2,ncol=2)
+  
+  # (A) True Positives - programmed = 1 and weight != NA
+  kpi_matrix[1,1] <- length(which(df_edgelist_merged$programmed == 1
+                                  & !is.na(df_edgelist_merged$weight)))
+  
+  # (B) False Negatives - programmed = 1 and weight = NA
+  kpi_matrix[2,1] <- length(which(df_edgelist_merged$programmed == 1
+                                  & is.na(df_edgelist_merged$weight)))
+  
+  # (C) True Negatives - programmed = 0 and weight = NA
+  kpi_matrix[2,2] <- length(which(df_edgelist_merged$programmed == 0
+                                  & is.na(df_edgelist_merged$weight)))
+  
+  # (D) False Positives - programmed = 0 and weight != NA
+  kpi_matrix[1,2] <- length(which(df_edgelist_merged$programmed == 0
+                                  & !is.na(df_edgelist_merged$weight)))
+  
+  #calculate sensitivity & specificity
+  sensitivity_vector[j] <- kpi_matrix[1,1] / (kpi_matrix[1,1] + kpi_matrix[2,1])
+  specificity_vector[j] <- kpi_matrix[2,2] / (kpi_matrix[2,2] + kpi_matrix[1,2])
+  
+  #calculate percentage of edges found within/outside cluster
+  edges_incluster <- length(which(df_edgelist_merged$in_cluster == 1 & !is.na(df_edgelist_merged$weight)))
+  incluster_vector[j] <- edges_incluster / length(which(!is.na(df_edgelist_merged$weight)))
+  outcluster_vector[j] <- 1 - incluster_vector[j]
+  
+  #calculate percentage of edges found that were programmed/non-programmed
+  #edges programmed: TP / (TP + FP)
+  programmed_vector[j] <- kpi_matrix[1,1] / (kpi_matrix[1,1] + kpi_matrix[1,2])
+  nonprogrammed_vector[j] <- 1 - programmed_vector[j]
+  
+  #calculate number of edges to represent size of network
+  size_vector[j] <- length(which(!is.na(df_edgelist_merged$weight)))
+  
+  print(j) #to keep track in console
 }
 
-#=-=-QGRAPH VISUALIZATION-=-=-=-#
-# generate single dataset
-set.seed(100) #reproduce same result
-Data1 <- simulateData(pop.model, sample.nobs = 2000)
+#store KPI vectors into list
+list_kpi <- list(size = size_vector, sensitivity = sensitivity_vector, specificity = specificity_vector,
+                 '%_programmed' = programmed_vector, '%_nonprogrammed' = nonprogrammed_vector,
+                 '%_incluster' = incluster_vector, '%_outcluster' = outcluster_vector)
 
-#checking how qgraph performs
-qgraph_glasso <- qgraph(cor(Data1), layout="spring", graph="glasso", sampleSize=3000, cut=0)
+#convert KPI vectors into data-frame
+df_kpi <- as.data.frame(do.call(cbind, list_kpi))
+df_kpi <- format(df_kpi, digits=3, nsmall=0)
+df_kpi <- sapply(df_kpi, as.numeric)
 
-
-#=-=-= CHECK EDGELIST FOR SPURIOUS CORRELATIONS FOUND VIA GLASSO-=-=-=#
-#create dataframe to retrieve edgelist
-node_from <- qgraph_glasso$Edgelist$from
-node_to <- qgraph_glasso$Edgelist$to
-weight <- qgraph_glasso$Edgelist$weight
-edges <- data.frame(node_from, node_to, weight)
+df_kpi_avg <- colMeans(df_kpi)
+df_kpi_avg <- format(df_kpi_avg, digits=3, nsmall=0)
 
 
-#prepare empty dataframe for correlations within triplets
-edges_programmed <- data.frame(node_from=as.integer(),
-                               node_to=as.integer(),
-                               weight=as.numeric())
-
-#step size of 12, to represent each set of 4 triplets 
-for (i in seq(1, max(edges$node_to), 12)) {
-  #find the edges that occur within a triplet and as programmed in the model
-  df_temp <- subset(edges, (node_from >= i & node_from <= i+2 & node_to >= i & node_to <= i+2) #edges within triplet A/E/I
-                    | (node_from >= i+3 & node_from <= i+5 & node_to >= i+3 & node_to <= i+5) #edges within triplet B/F/J
-                    | (node_from >= i+6 & node_from <= i+8 & node_to >= i+6 & node_to <= i+8) #edges within triplet C/G/K
-                    | (node_from >= i+9 & node_from <= i+11 & node_to >= i+9 & node_to <= i+11) #edges within triplet D/H/L
-                    | (node_from == i+2 & node_to == i+5) #to include edges of A.z to B.z, etc.
-                    | (node_from == i+2 & node_to == i+8) #to include edges of A.z to C.z, etc.
-                    | (node_from == i+2 & node_to == i+11) #to include edges of A.z to D.z, etc
-                    | (node_from == i+5 & node_to == i+8) #to indluce edges of B.z to C.z, etc.
-                    | (node_from == i+5 & node_to == i+11) #to include edges of B.z to D.z, etc.
-                    | (node_from == i+8 & node_to == i+11)) #to include edges of C.z to D.z, etc.
-  #append these rows to the dataframe 'edges_programmed'
-  edges_programmed <- rbind(edges_programmed, df_temp)
-}
-
-#dplyr package used for the function 'anti_join'
-#returns subset of complete edgelist dataframe minus the ones found within triplets and intentionally programmed in model
-#these are the spurious correlations with threshold level found in the qgraph() function
-edges_spurious <- anti_join(edges, edges_programmed)
-
+#=-=-RENAMING NODES FROM NUMBERS TO VARIABLE NAMES-=-=-=-=-=-=#
 #transform numeric values for nodes in edgelist to actual variable names of model
 #sequential order, 1/2/3 are A.x/A.y/A.z, etc.
 number <- seq(3*length(ecov))
@@ -401,9 +500,11 @@ for(i in 1:length(ecov)) {
       name <- paste(letter, ".z", sep="")
     }
     #replace each occurrence of current number (first one in vector) to newly created name
-    edges_spurious$node_from[edges_spurious$node_from == number[1]] <- name
+    df_master$node_from[df_master$node_from == number[1]] <- name
+    df_edgelist$node_from[df_edgelist$node_from == number[1]] <- name
     #repeat the same for the 'node_to' column
-    edges_spurious$node_to[edges_spurious$node_to == number[1]] <- name
+    df_master$node_to[df_master$node_to == number[1]] <- name
+    df_edgelist$node_to[df_edgelist$node_to == number[1]] <- name
     #delete first value of vector, similar to number += 1 in Python
     number <- number[-1]
   }
@@ -413,9 +514,125 @@ for(i in 1:length(ecov)) {
   }
 }
 
-#overview of simulated interaction information per triplet
-print(df)
 
-#significant spurious correlations with variable names
-options(scipen=999) #change number formatting of correlations for readability
-edges_spurious[abs(edges_spurious$weight) >= 0.02,]
+#=-=-OVERALL KPIs-=-=-=-=-=-=#
+#having calculated KPIs per iteration, now to calculate KPIs from df_master after all iterations
+#KPIs could be related to subsets of the master dataframe
+
+# (A) % of replications where particular edge was found (via group by)
+#filter the master dataframe with only records including weights
+df_master_filtered <- df_master[!is.na(df_master$weight),1:2]
+
+#aggregate edges by number of occurrences, named 'count'
+df_master_filtered_agg <- aggregate(df_master_filtered, by=list(df_master_filtered$node_from, df_master_filtered$node_to), 
+                                    FUN=length)[1:3]
+#rename columns
+colnames(df_master_filtered_agg) <- c("node_from", "node_to", "count")
+
+#calculate % of occurrence, named 'occur'
+for (i in 1:nrow(df_master_filtered_agg)) {
+  df_master_filtered_agg$occur[i] <- df_master_filtered_agg$count[i] / REP
+}
+
+#merge grouped-by dataframe of edges with metadata of 'programmed' and 'in_cluster'
+df_master_filtered_agg <-merge(x=df_edgelist,y=df_master_filtered_agg, all.x=TRUE)
+
+#some edges may have a 'NA' value for columns 'count' and 'occur', which is plausible
+#replace 'NA' in columns 'count' and 'occur' with 0
+df_master_filtered_agg$count[is.na(df_master_filtered_agg$count)] <- 0
+df_master_filtered_agg$occur[is.na(df_master_filtered_agg$occur)] <- 0
+
+# (A-1) full list of all edges with occurrence, descending order
+df_master_filtered_agg_occurlist <- df_master_filtered_agg[order(-df_master_filtered_agg$occur),][,c(1,2,6)]
+
+# (A-2) occurrences split by programmed and non-programmed edges
+df_master_filtered_agg_programmed <- df_master_filtered_agg[df_master_filtered_agg$programmed == 1,c(1,2,6)]
+#descending sort by occurrence %
+df_master_filtered_agg_programmed <- df_master_filtered_agg_programmed[order(-df_master_filtered_agg_programmed$occur),]
+
+df_master_filtered_agg_nonprogrammed <- df_master_filtered_agg[df_master_filtered_agg$programmed == 0,c(1,2,6)]
+#descending sort by occurrence %
+df_master_filtered_agg_nonprogrammed <- df_master_filtered_agg_nonprogrammed[order(-df_master_filtered_agg_nonprogrammed$occur),]
+
+
+# (A-3) split by those within and outside cluster
+df_master_filtered_agg_incluster <- df_master_filtered_agg[df_master_filtered_agg$in_cluster == 1,c(1,2,6)]
+#descending sort by occurrence %
+df_master_filtered_agg_incluster <- df_master_filtered_agg_incluster[order(-df_master_filtered_agg_incluster$occur),]
+
+df_master_filtered_agg_outcluster <- df_master_filtered_agg[df_master_filtered_agg$in_cluster == 0,c(1,2,6)]
+#descending sort by occurrence %
+df_master_filtered_agg_outcluster <- df_master_filtered_agg_outcluster[order(-df_master_filtered_agg_outcluster$occur),]
+
+
+# (A-4) combination: non-programmed, in cluster
+#those that are non-programmed and outside of cluster are already covered by 'outcluster'
+#because no edges between clusters would be programmed with intention
+df_master_filtered_agg_nonprogrammed_incluster <- df_master_filtered_agg[df_master_filtered_agg$programmed == 0 
+                                                                         & df_master_filtered_agg$in_cluster == 1 ,c(1,2,6)]
+#descending sort by occurrence %
+df_master_filtered_agg_nonprogrammed_incluster <- df_master_filtered_agg_nonprogrammed_incluster[order(-df_master_filtered_agg_nonprogrammed_incluster$occur),]
+
+
+# (B) overall specificity and sensitivity KPIs
+kpi_matrix_agg <- matrix(c(0,0,0,0),nrow=2,ncol=2)
+
+# (1) True Positives - sum of edge counts where programmed = 1
+kpi_matrix_agg[1,1] <- length(which(df_master$programmed == 1
+                                    & !is.na(df_master$weight)))
+
+# (2) False Negatives - number of records where programmed = 1 and count = 0
+kpi_matrix_agg[2,1] <- length(which(df_master$programmed == 1
+                                    & is.na(df_master$weight)))
+
+# (3) True Negatives - number of records where programmed = 0 and count = 0
+kpi_matrix_agg[2,2] <- length(which(df_master$programmed == 0
+                                    & !is.na(df_master$weight)))
+
+# (4) False Positives - sum of edge counts where programmed = 0
+kpi_matrix_agg[1,2] <- length(which(df_master$programmed == 0
+                                    & is.na(df_master$weight)))
+
+#calculate sensitivity & specificity
+sensitivity_agg <- kpi_matrix_agg[1,1] / (kpi_matrix_agg[1,1] + kpi_matrix_agg[2,1])
+specificity_agg <- kpi_matrix_agg[2,2] / (kpi_matrix_agg[2,2] + kpi_matrix_agg[1,2])
+
+
+
+#=-=-CALCULATING II PER TRIPLET-=-=-=-=-=-=#
+#preparing dataframe for the output, two columns for scores and description of level of II intended
+df_ii <- data.frame(ii_score=as.numeric(12),
+                    ii_programmed=character(12),
+                    stringsAsFactors = FALSE)
+
+for(i in 1:length(ecov)){
+  #add mean II values per triplet
+  df_ii$ii_score[i] <- mean(ii_list[[i]])
+  
+  #add description of programmed intention of level of II
+  if (ecov[i] == ii_choice[1]) {
+    df_ii$ii_programmed[i] <- "redundancy"
+  }
+  else if (ecov[i] == ii_choice[2]) {
+    df_ii$ii_programmed[i] <- "zero interaction"
+  }
+  else if (ecov[i] == ii_choice[3]) {
+    df_ii$ii_programmed[i] <- "synergy"
+  }
+  else {
+    df_ii$ii_programmed[i] <- "custom"
+  }
+}
+
+#=-=-FINAL LIST OF RESULTS-=-=-=-=-=-=#
+list_results <- list('Iteration Summary (Avg. KPIs)' = df_kpi_avg, 'Iteration KPIs' = df_kpi,
+                     'II per Triplet' = df_ii,
+                     'Occurrences of All Edges' = df_master_filtered_agg_occurlist,
+                     'Occurrences of All Programmed Edges' = df_master_filtered_agg_programmed,
+                     'Occurrences of All Non-Programmed Edges' = df_master_filtered_agg_nonprogrammed,
+                     'Occurrences of Edges within Cluster' = df_master_filtered_agg_incluster,
+                     'Occurrences of Edges between Clusters' = df_master_filtered_agg_outcluster,
+                     'Occurrences of Non-Programmed Edges within Cluster' = df_master_filtered_agg_nonprogrammed_incluster)
+
+print(list_results$`Iteration Summary (Avg. KPIs)`)
+print(list_results$`II per Triplet`)
