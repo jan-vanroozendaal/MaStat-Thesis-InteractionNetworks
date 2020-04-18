@@ -585,6 +585,9 @@ list_results <- list('Iteration Summary (Avg. KPIs)' = df_kpi_avg, 'Iteration KP
                      'Occurrences of All Edges' = df_master_filtered_agg_occurlist,
                      'Occurrences of All Programmed Edges' = df_master_filtered_agg_programmed,
                      'Occurrences of All Non-Programmed Edges' = df_master_filtered_agg_nonprogrammed,
+                     'Occurrences of Edges within Cluster' = df_master_filtered_agg_incluster,
+                     'Occurrences of Edges between Clusters' = df_master_filtered_agg_outcluster,
+                     'Occurrences of Non-Programmed Edges within Cluster' = df_master_filtered_agg_nonprogrammed_incluster,
                      'Avg. Edge Weights & Occurrences' = df_master_filtered_weight_agg,
                      'Only Significant Avg. Edge Weights & Occurrences' = df_weight_sig)
 
