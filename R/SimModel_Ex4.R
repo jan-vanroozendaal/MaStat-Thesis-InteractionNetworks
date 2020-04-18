@@ -18,10 +18,10 @@ ii_choice = c(0.22, -0.15, -0.39)
 #ecov <- rep(-0.15, 10L)
 
 #CASE - REDUNDANCY
-ecov <- rep(0.22, 10L)
+#ecov <- rep(0.22, 10L)
 
 #CASE - SYNERGY
-#ecov <- rep(-0.39, 10L)
+ecov <- rep(-0.39, 10L)
 
 #CASE - CUSTOM
 #ecov <- c(0.22, -0.15, -0.39, 0.22, -0.15, -0.39, 0.22, -0.15, -0.39, 0.22)
