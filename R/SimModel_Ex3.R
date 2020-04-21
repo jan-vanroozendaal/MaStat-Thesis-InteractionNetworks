@@ -246,85 +246,21 @@ semPaths(fit)
 
 
 #=-=-BASELINE EDGELIST-=-=-=-=-=-=#
-#STEP 1: create dataframe to store all possible edges in
-df_edgelist <- data.frame(node_from=as.integer(),
-                          node_to=as.integer(),
-                          programmed=as.integer(),
-                          in_cluster=as.integer())[1:500,]
-
-#create two vectors to prepare all possible node combinations for edges
-all_from <- seq(1,27) #27 because 9 triplets
-all_to <- all_from[-1]
-
-#row number sequence for indexing on rows in empty dataframe
-rownum <- seq(1, 500)
-
-#produce all possible combinations of nodes for the complete edgelist
-for (i in seq(1, length(all_from))) {
-  if (length(all_to) == 0) {
-    break
-  }
-  
-  else {
-    for (j in seq(1, length(all_to))) {
-      df_edgelist$node_from[rownum[1]] <- all_from[i]
-      df_edgelist$node_to[rownum[1]] <- all_to[j]
-      df_edgelist$programmed[rownum[1]] <- 0
-      df_edgelist$in_cluster[rownum[1]] <- 0
-      rownum <- rownum[-1]
-    }
-    all_to <- all_to[-1]
-  }
-}
-
-#remove rows with NA listed
-df_edgelist <- df_edgelist[complete.cases(df_edgelist),]
-
-#STEP 2: for each node combination, correctly flag whether the edge is expected or programmed in the model
-for (i in 1:nrow(df_edgelist)) {
-  #for each possible edge
-  for (j in seq(1, max(df_edgelist$node_to), 9)) {
-    #use if-statement to check whether combination of edges is expected/programmed
-    if (
-      (df_edgelist$node_from[i] >= j & df_edgelist$node_from[i] <= j+2 
-       & df_edgelist$node_to[i] >= j & df_edgelist$node_to[i] <= j+2) #edges within triplet A/D/G
-      
-      | (df_edgelist$node_from[i] >= j+3 & df_edgelist$node_from[i] <= j+5 
-         & df_edgelist$node_to[i] >= j+3 & df_edgelist$node_to[i] <= j+5) #edges within triplet B/E/H
-      
-      | (df_edgelist$node_from[i] >= j+6 & df_edgelist$node_from[i] <= j+8 
-         & df_edgelist$node_to[i] >= j+6 & df_edgelist$node_to[i] <= j+8) #edges within triplet C/F/I
-      
-      | (df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+4) #edges of A.z to B.y, D.z to E.y, G.z to H.y
-      | (df_edgelist$node_from[i] == j+4 & df_edgelist$node_to[i] == j+2) #flipped
-      | (df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+7) #edges of A.z to C.y, D.z to F.y, G.z to I.y
-      | (df_edgelist$node_from[i] == j+7 & df_edgelist$node_to[i] == j+2) #flipped
-      | (df_edgelist$node_from[i] == j+5 & df_edgelist$node_to[i] == j+1) #edges of B.z to A.y, E.z to D.y, H.z to G.y
-      | (df_edgelist$node_from[i] == j+1 & df_edgelist$node_to[i] == j+5) #flipped
-      | (df_edgelist$node_from[i] == j+5 & df_edgelist$node_to[i] == j+7) #edges of B.z to C.y, E.z to F.y, H.z to I.y
-      | (df_edgelist$node_from[i] == j+7 & df_edgelist$node_to[i] == j+5) #flipped
-      | (df_edgelist$node_from[i] == j+8 & df_edgelist$node_to[i] == j+1) #edges of C.z to A.y, F.z to D.y, I.z to G.y
-      | (df_edgelist$node_from[i] == j+1 & df_edgelist$node_to[i] == j+8) #flipped
-      | (df_edgelist$node_from[i] == j+8 & df_edgelist$node_to[i] == j+4) #edges of C.z to B.y, G.z to E.y, I.z to H.y
-      | (df_edgelist$node_from[i] == j+4 & df_edgelist$node_to[i] == j+8)) #flipped
-    
-    {
-      #if condition is met, change value of 'programmed' column to 1
-      df_edgelist$programmed[i] <- 1
-    }
-  }
-}
-
-
-#STEP 3: label whether node combination for edge can be expected (not but programmed) within cluster
-#e.g. in a cluster with three triplets, spurious correlation between node 1 and 9 is expected, between 1 and 12 not.
-for (i in 1:nrow(df_edgelist)) {
-  for (j in seq(1, max(df_edgelist$node_to), 9)) {
-    if (df_edgelist$node_from[i] >= j & df_edgelist$node_to[i] <= j+8) {
-      df_edgelist$in_cluster[i] <- 1
-    }
-  }
-}
+# get indices lower-half of Sigma
+idx <- lav_matrix_vech_idx(n = nrow(Sigma), diagonal = FALSE)
+node_from  <- col(Sigma)[idx]
+node_to    <- row(Sigma)[idx]
+# programmed: non-zero edge
+programmed <- ifelse(abs(Sigma[idx]) > 0, 1, 0)
+# within-cluster edges
+set1 <- 1:9
+set2 <- 1:9 + 9
+set3 <- 1:9 + 9 + 9
+in_cluster <- ifelse((node_from %in% set1 & node_to %in% set1) |
+                       (node_from %in% set2 & node_to %in% set2) |
+                       (node_from %in% set3 & node_to %in% set3), 1, 0)
+# create df_edgelist
+df_edgelist <- data.frame(node_from, node_to, programmed, in_cluster)
 
 
 #=-=-SIMULATION PROCESS-=-=-=-=-=-=#
@@ -371,8 +307,8 @@ for(j in seq_len(REP)) {
   
   
   #STEP 3: retrieve edgelist from glasso
-  qgraph_glasso <- qgraph(cor(Data), layout="spring", graph="glasso", sampleSize=1000, 
-                          threshold=TRUE, DoNotPlot=TRUE)$Edgelist
+  qgraph_glasso <- qgraph(cor(Data), layout="spring", graph="glasso", sampleSize=N, 
+                          threshold=0.015, DoNotPlot=TRUE)$Edgelist
   
   glasso_edges <- data.frame(qgraph_glasso$from, qgraph_glasso$to, qgraph_glasso$weight)
   #rename column names to match with df_edgelist
