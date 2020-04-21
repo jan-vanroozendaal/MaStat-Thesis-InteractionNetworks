@@ -242,64 +242,14 @@ semPaths(fit)
 
 
 #=-=-BASELINE EDGELIST-=-=-=-=-=-=#
-#STEP 1: create dataframe to store all possible edges in
-df_edgelist <- data.frame(node_from=as.integer(),
-                          node_to=as.integer(),
-                          programmed=as.integer())[1:500,]
-
-#create two vectors to prepare all possible node combinations for edges
-all_from <- seq(1,30) #30 because 10 triplets
-all_to <- all_from[-1]
-
-#row number sequence for indexing on rows in empty dataframe
-rownum <- seq(1, 500)
-
-#produce all possible combinations of nodes for the complete edgelist
-for (i in seq(1, length(all_from))) {
-  if (length(all_to) == 0) {
-    break
-  }
-  
-  else {
-    for (j in seq(1, length(all_to))) {
-      df_edgelist$node_from[rownum[1]] <- all_from[i]
-      df_edgelist$node_to[rownum[1]] <- all_to[j]
-      df_edgelist$programmed[rownum[1]] <- 0
-      rownum <- rownum[-1]
-    }
-    all_to <- all_to[-1]
-  }
-}
-
-#remove rows with NA listed
-df_edgelist <- df_edgelist[complete.cases(df_edgelist),]
-
-#STEP 2: for each node combination, correctly flag whether the edge is expected or programmed in the model
-for (i in 1:nrow(df_edgelist)) {
-  #for each possible edge
-  for (j in seq(1, max(df_edgelist$node_to), 3)) {
-    #use if-statement to check whether combination of edges is expected/programmed
-    if (
-      (df_edgelist$node_from[i] >= j & df_edgelist$node_from[i] <= j+2 
-       & df_edgelist$node_to[i] >= j & df_edgelist$node_to[i] <= j+2) #edges within triplets
-      
-      | df_edgelist$node_from[i] == j+2 & df_edgelist$node_to[i] == j+5) #to include edges of A.z to B.z, B.z to C.z, etc. 
-    
-    {
-      #if condition is met, change value of 'programmed' column to 1
-      df_edgelist$programmed[i] <- 1
-    }
-    
-    else if (j == max(df_edgelist$node_to) - 2){
-      #if reached at the last iteration of the loop
-      #add the row connecting the first triplet with the last triplet (A.z to J.z)
-      if  (df_edgelist$node_from[i] == min(df_edgelist$node_from) + 2 & df_edgelist$node_to[i] == j + 2)
-        {
-          df_edgelist$programmed[i] <- 1
-        }
-    }
-  }
-}
+# get indices lower-half of Sigma
+idx <- lav_matrix_vech_idx(n = nrow(Sigma), diagonal = FALSE)
+node_from  <- col(Sigma)[idx]
+node_to    <- row(Sigma)[idx]
+# programmed: non-zero edge
+programmed <- ifelse(abs(Sigma[idx]) > 0, 1, 0)
+# create df_edgelist
+df_edgelist <- data.frame(node_from, node_to, programmed)
 
 
 #=-=-SIMULATION PROCESS-=-=-=-=-=-=#
@@ -344,8 +294,8 @@ for(j in seq_len(REP)) {
   
   
   #STEP 3: retrieve edgelist from glasso
-  qgraph_glasso <- qgraph(cor(Data), layout="spring", graph="glasso", sampleSize=1000, 
-                          threshold=TRUE, DoNotPlot=TRUE)$Edgelist
+  qgraph_glasso <- qgraph(cor(Data), layout="spring", graph="glasso", sampleSize=N, 
+                          threshold=0.015, DoNotPlot=TRUE)$Edgelist
   
   glasso_edges <- data.frame(qgraph_glasso$from, qgraph_glasso$to, qgraph_glasso$weight)
   #rename column names to match with df_edgelist
