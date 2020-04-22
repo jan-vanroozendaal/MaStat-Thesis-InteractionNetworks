@@ -5,7 +5,6 @@ library(lavaan)
 library(semPlot)
 library(qgraph)
 library(dplyr)
-library(glasso)
 
 #set seed for reproducability
 set.seed(100)
