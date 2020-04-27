@@ -1,4 +1,4 @@
-#subset on Model 1
+#subset on single
 df_nonprogrammed_model <- df_nonprogrammed_total[df_nonprogrammed_total$model == "Model 2"
                                                  & df_nonprogrammed_total$occur != 0,]
 row.names(df_nonprogrammed_model) <- NULL
@@ -11,12 +11,10 @@ for (i in 2:nrow(df_nonprogrammed_model)) {
     j <- 1
   }
   df_nonprogrammed_model$num[i] <- j
-  
   j <- j + 1
 }
 
 library(ggplot2)
-library(directlabels)
 line_chart <- ggplot(data=df_nonprogrammed_model, aes(x=num, y=occur)) + geom_line() + geom_point() + 
   facet_grid(threshold ~ case)
 
