@@ -5,7 +5,8 @@ Each of the R-scripts in the folder `R` can run under flexible settings of level
 
 The folder `Workspaces` contains a total of 252 separate workspaces, each containing a list of results from 1000 simulations. A breakdown of the workspaces is done as follows:
 * 7 model layouts
-* 12 threshold levels (False, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, True)
-* Three cases: full synergy, full redundancy or full zero-interaction.
+* For each model layout, 12 threshold levels (False, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, True)
+* For each threshold level, 3 cases: full synergy, full redundancy or full zero-interaction.
+    + 7 * 12 * 3 = 252 unique scenarios
 
 The folder `Visualization` uses combined results from those 252 workspaces to create a bigger, single workspace per visualization topic.
