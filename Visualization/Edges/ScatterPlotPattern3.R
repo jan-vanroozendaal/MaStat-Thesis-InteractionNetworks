@@ -48,4 +48,6 @@ p1 <- plot(ggplot(df_test[df_test$path_type == "Y to Z"
              theme(legend.position = "none") +
              facet_wrap(~ threshold, ncol=6))
 
-ggsave(p1, filename = "C:/Users/janvr/Desktop/ScatterPattern3.png", width = 12, height = 5)
+your_directory <-"C:\\Users\\..." #edit file location here
+
+ggsave(p1, filename = paste(your_directory, "ScatterPattern3.png", sep=""), width = 12, height = 5)
