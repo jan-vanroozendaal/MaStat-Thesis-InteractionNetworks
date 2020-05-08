@@ -198,6 +198,6 @@ for (i in 1:length(models)) {
   file_name_part2 <- paste(file_name_part1, "X-Y_V2", sep="")
   file_name_part3 <- paste(file_name_part2, ".csv", sep="")
     
-    
-  write.csv(df_result, paste("C:\\Users\\janvr\\Desktop\\Visualization\\Edges\\X-Y\\", file_name_part3, sep=""), row.names = FALSE)
+  your_directory <-"C:\\Users\\..." #edit file location here
+  write.csv(df_result, paste(your_directory, file_name_part3, sep=""), row.names = FALSE)
 }
