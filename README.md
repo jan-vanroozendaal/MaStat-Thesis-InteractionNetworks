@@ -9,4 +9,4 @@ The folder `Workspaces` contains a total of 252 separate workspaces, each contai
 * For each threshold level, 3 cases: full synergy, full redundancy or full zero-interaction.
     + 7 * 12 * 3 = 252 unique scenarios
 
-The folder `Visualization` uses combined results from those 252 workspaces to create a bigger, single workspace per visualization topic.
+The folder `Visualization` uses combined results from those 252 workspaces to create a bigger, single workspace per visualization topic. It mainly contains scripts to reproduce the visualizations shown for the main results in the dissertation, along with extra, rejected visualization approaches.
